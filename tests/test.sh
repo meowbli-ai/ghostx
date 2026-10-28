@@ -56,6 +56,15 @@ if rg -n 'ghostx-surface:|22;0t|23;0t' \
   fail "runtime still contains title mutation"
 fi
 
+# Restoration must reveal the app and the exact target terminal through
+# Ghostty's native scripting API rather than System Events accessibility.
+/usr/bin/osacompile -o "$tmp_dir/restore-surface.scpt" "$repo_dir/applescript/restore-surface.applescript"
+grep -Fq '        activate' "$repo_dir/applescript/restore-surface.applescript" || fail "restore does not activate Ghostty"
+grep -Fq '                focus terminalRef' "$repo_dir/applescript/restore-surface.applescript" || fail "restore does not focus target terminal"
+if grep -Fq 'tell application "System Events"' "$repo_dir/applescript/restore-surface.applescript"; then
+  fail "restore requires accessibility scripting"
+fi
+
 # A prompt in the focused Ghostty terminal binds progressively without a TTY
 # probe or a shell restart.
 focused_state_dir="$tmp_dir/focused-state"
@@ -161,6 +170,9 @@ GHOSTX_SKIP_WAIT=1 \
 [ -f "$empty_state_dir/run/restored-empty-state-instance" ] || fail "no-state startup was not guarded"
 
 state_dir="$tmp_dir/state"
+restore_codex_home="$tmp_dir/restore-codex-home"
+mkdir -p "$restore_codex_home/sessions/2026/01/01"
+printf '%s\n' '{}' >"$restore_codex_home/sessions/2026/01/01/rollout-2026-01-01T00-00-00-$session_id.jsonl"
 printf '%s\n' "{\"session_id\":\"$session_id\",\"hook_event_name\":\"SessionStart\",\"cwd\":\"$project_dir\"}" |
   TERM_PROGRAM=ghostty \
   GHOSTX_SURFACE_ID="$surface_id" \
@@ -169,6 +181,7 @@ printf '%s\n' "{\"session_id\":\"$session_id\",\"hook_event_name\":\"SessionStar
 
 cp "$state_dir/state.json" "$empty_state_dir/state.json"
 GHOSTX_STATE_DIR="$empty_state_dir" \
+CODEX_HOME="$restore_codex_home" \
 GHOSTX_APPLESCRIPT_DIR="$repo_dir/applescript" \
 GHOSTX_OSASCRIPT="$repo_dir/tests/mock-osascript.sh" \
 GHOSTX_MOCK_LOG="$empty_state_log" \
@@ -181,6 +194,7 @@ assert_eq "$(wc -l <"$empty_state_log" | tr -d ' ')" "0"
 mock_log="$tmp_dir/mock.log"
 : >"$mock_log"
 GHOSTX_STATE_DIR="$state_dir" \
+CODEX_HOME="$restore_codex_home" \
 GHOSTX_APPLESCRIPT_DIR="$repo_dir/applescript" \
 GHOSTX_OSASCRIPT="$repo_dir/tests/mock-osascript.sh" \
 GHOSTX_MOCK_LOG="$mock_log" \
@@ -194,6 +208,7 @@ assert_eq "$actual" "$(printf '%b' "$expected")"
 
 # A second shell in the same Ghostty process must not resume duplicates.
 GHOSTX_STATE_DIR="$state_dir" \
+CODEX_HOME="$restore_codex_home" \
 GHOSTX_APPLESCRIPT_DIR="$repo_dir/applescript" \
 GHOSTX_OSASCRIPT="$repo_dir/tests/mock-osascript.sh" \
 GHOSTX_MOCK_LOG="$mock_log" \

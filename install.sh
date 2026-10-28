@@ -13,17 +13,8 @@ zshrc=${ZDOTDIR:-$HOME}/.zshrc
 ghostty_config=${GHOSTX_GHOSTTY_CONFIG:-"$HOME/Library/Application Support/com.mitchellh.ghostty/config"}
 
 ghostty_instance_id() {
-  identity=""
-  ghostty_pids=$(
-    ps -axo pid=,command= 2>/dev/null |
-      awk '$2 ~ /\/Ghostty\.app\/Contents\/MacOS\/ghostty$/ { print $1 }' |
-      sort -n
-  )
-  for ghostty_pid in $ghostty_pids; do
-    started_at=$(ps -o lstart= -p "$ghostty_pid" 2>/dev/null || true)
-    identity="${identity}${ghostty_pid}-${started_at}-"
-  done
-  printf '%s' "$identity" | tr -cd 'A-Za-z0-9_-'
+  ps -axo pid=,command= 2>/dev/null |
+    awk '$2 ~ /\/Ghostty\.app\/Contents\/MacOS\/ghostty$/ { print $1; exit }'
 }
 
 mkdir -p "$runtime_dir/libexec" "$runtime_dir/applescript" "$runtime_dir/shell"

@@ -78,6 +78,18 @@ now** exits before Codex processes the session UUID and leaves the terminal at
 the shell prompt. Normal manual Codex launches still check for updates, and
 `codex update` remains available at any time.
 
+Ghostx restores all valid root sessions by default. To avoid restoring too many
+terminals on a machine with a long-lived state file, set
+`GHOSTX_MAX_RESTORE_SESSIONS` to a positive number such as `32`; set it to `0`
+for explicit unlimited restore. Session ids without their own Codex rollout
+file, including parent ids from subagents, are skipped automatically.
+
+Before sending each resume command, Ghostx activates Ghostty and focuses the
+matching terminal through Ghostty's native scripting API. This makes windows
+restored in an app-hidden or minimized state visible again without requiring
+macOS Accessibility access. Saved window size, position, tabs, and splits stay
+under Ghostty's native restoration.
+
 A Mac reboot is not required for an end-to-end check. After the desired
 sessions have each received at least one prompt, save active terminal work,
 fully quit Ghostty, and reopen it. Quitting Ghostty terminates the processes in

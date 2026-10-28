@@ -12,19 +12,27 @@ applescript_dir=${GHOSTX_APPLESCRIPT_DIR:-"$runtime_dir/applescript"}
 state_dir=${GHOSTX_STATE_DIR:-"${XDG_STATE_HOME:-$HOME/.local/state}/ghostx"}
 state_file="$state_dir/state.json"
 osascript_bin=${GHOSTX_OSASCRIPT:-/usr/bin/osascript}
+codex_home=${CODEX_HOME:-"$HOME/.codex"}
+max_restore_sessions=${GHOSTX_MAX_RESTORE_SESSIONS:-0}
+case "$max_restore_sessions" in
+  ''|*[!0-9]*) max_restore_sessions=0 ;;
+esac
+
+session_rollout_exists() {
+  wanted_id=$1
+  for rollout_path in "$codex_home"/sessions/*/*/*/*.jsonl; do
+    [ -f "$rollout_path" ] || continue
+    rollout_name=${rollout_path##*/}
+    case "$rollout_name" in
+      *-"$wanted_id".jsonl) return 0 ;;
+    esac
+  done
+  return 1
+}
 
 ghostty_instance_id() {
-  identity=""
-  ghostty_pids=$(
-    ps -axo pid=,command= 2>/dev/null |
-      awk '$2 ~ /\/Ghostty\.app\/Contents\/MacOS\/ghostty$/ { print $1 }' |
-      sort -n
-  )
-  for ghostty_pid in $ghostty_pids; do
-    started_at=$(ps -o lstart= -p "$ghostty_pid" 2>/dev/null || true)
-    identity="${identity}${ghostty_pid}-${started_at}-"
-  done
-  printf '%s' "$identity" | tr -cd 'A-Za-z0-9_-'
+  ps -axo pid=,command= 2>/dev/null |
+    awk '$2 ~ /\/Ghostty\.app\/Contents\/MacOS\/ghostty$/ { print $1; exit }'
 }
 
 if [ -n "${GHOSTX_INSTANCE_ID:-}" ]; then
@@ -38,7 +46,7 @@ instance_id=$(printf '%s' "$instance_id" | tr -cd 'A-Za-z0-9_-')
 run_dir="$state_dir/run"
 mkdir -p "$run_dir" || exit 0
 done_file="$run_dir/restored-$instance_id"
-lock_dir="$run_dir/restoring-$instance_id"
+lock_dir="$run_dir/restoring"
 [ ! -e "$done_file" ] || exit 0
 mkdir "$lock_dir" 2>/dev/null || exit 0
 cleanup_lock() {
@@ -89,6 +97,18 @@ surface_ids=$(/usr/bin/plutil -extract surfaces raw -o - "$state_file" 2>/dev/nu
   exit 0
 }
 restored=0
+candidate_file=$(mktemp "$state_dir/restore-candidates.XXXXXX") || {
+  mark_done 0
+  exit 0
+}
+cleanup_candidates() {
+  rm -f "$candidate_file" 2>/dev/null || true
+}
+cleanup_all() {
+  cleanup_candidates
+  cleanup_lock
+}
+trap cleanup_all EXIT HUP INT TERM
 
 for surface_id in $surface_ids; do
   session_id=$(
@@ -97,12 +117,32 @@ for surface_id in $surface_ids; do
   agent=$(
     /usr/bin/plutil -extract "surfaces.$surface_id.agent" raw -o - "$state_file" 2>/dev/null
   ) || continue
-
   [ "$agent" = "codex" ] || continue
   case "$session_id" in
     ????????-????-????-????-????????????) ;;
     *) continue ;;
   esac
+  session_rollout_exists "$session_id" || continue
+  updated_at=$(
+    /usr/bin/plutil -extract "surfaces.$surface_id.updated_at" raw -o - "$state_file" 2>/dev/null
+  ) || updated_at=0
+  case "$updated_at" in
+    ''|*[!0-9]*) updated_at=0 ;;
+  esac
+  printf '%s\t%s\n' "$updated_at" "$surface_id" >>"$candidate_file"
+done
+
+if [ "$max_restore_sessions" -eq 0 ]; then
+  selected_candidates=$(sort -rn "$candidate_file")
+else
+  selected_candidates=$(sort -rn "$candidate_file" | head -n "$max_restore_sessions")
+fi
+
+while IFS='	' read -r updated_at surface_id; do
+  [ -n "$surface_id" ] || continue
+  session_id=$(
+    /usr/bin/plutil -extract "surfaces.$surface_id.session_id" raw -o - "$state_file" 2>/dev/null
+  ) || continue
 
   # An interactive update prompt exits before Codex processes the resume
   # request. Suppress that prompt only for automatic restoration; ordinary
@@ -113,7 +153,9 @@ for surface_id in $surface_ids; do
       "$surface_id" "$resume_command" 2>/dev/null
   ) || result=""
   [ "$result" = "restored" ] && restored=$((restored + 1))
-done
+done <<EOF
+$selected_candidates
+EOF
 
 mark_done "$restored"
 exit 0
