@@ -29,6 +29,13 @@ payload=$(cat) || exit 0
 session_id=$(printf '%s' "$payload" | /usr/bin/plutil -extract session_id raw -o - - 2>/dev/null) || exit 0
 session_cwd=$(printf '%s' "$payload" | /usr/bin/plutil -extract cwd raw -o - - 2>/dev/null) || session_cwd=""
 
+# Codex also runs prompt hooks inside thread-spawned subagents. Their
+# session_id may be the parent thread id, which is not independently resumable
+# and must never replace the root session bound to this terminal.
+agent_id=$(printf '%s' "$payload" | /usr/bin/plutil -extract agent_id raw -o - - 2>/dev/null) || agent_id=""
+agent_type=$(printf '%s' "$payload" | /usr/bin/plutil -extract agent_type raw -o - - 2>/dev/null) || agent_type=""
+[ -z "$agent_id" ] && [ -z "$agent_type" ] || exit 0
+
 case "$session_id" in
   ????????-????-????-????-????????????) ;;
   *) exit 0 ;;

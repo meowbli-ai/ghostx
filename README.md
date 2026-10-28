@@ -119,9 +119,11 @@ mapping is stored at:
 ${XDG_STATE_HOME:-~/.local/state}/ghostx/state.json
 ```
 
-The restore helper runs once per Ghostty application process. It waits for the
-restored surface list to settle, then targets only surface UUIDs that exist in
-both the live Ghostty application and the state file. Ghostx does not recreate
+The restore helper runs once per Ghostty application process, keyed by that
+process's PID. A global startup lock also prevents several restored shells from
+running the replay concurrently. It waits for the restored surface list to
+settle, then targets only surface UUIDs that exist in both the live Ghostty
+application and the state file. Ghostx does not recreate
 a surface that Ghostty itself did not restore, because the same missing surface
 can also mean that the user intentionally closed it.
 
